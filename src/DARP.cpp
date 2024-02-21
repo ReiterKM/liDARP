@@ -259,6 +259,39 @@ void DARP::transform_dynamic(double share_static_requests, double beta)
                 R.push_back(i);
             }
         }
+
+        if (R.empty())
+        {
+            double first_time = become_known_array[0];
+            int first_request = 1;
+            for (int i = 2; i<=num_requests; ++i)
+            {
+                if (become_known_array[i-1] < first_time)
+                {
+                    first_time = become_known_array[i-1];
+                    first_request = i;
+                }
+            }
+            if (first_request == 1)
+                last_static = 1;
+            else 
+                last_static = 0;
+            R.push_back(first_request);
+            
+            // check if there are other requests which become known at the same time
+            for (int i=last_static+1; i<=num_requests; ++i)
+            {
+                if(i != first_request)
+                {
+                    if (DARPH_ABS(become_known_array[i-1] - first_time) < DARPH_EPSILON)
+                    {
+                        R.push_back(i);
+                        if (i == last_static+1)
+                            last_static = i;
+                    }
+                }
+            }
+        }
     }
     else
     {

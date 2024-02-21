@@ -29,6 +29,7 @@ int main(int argc,char* argv[])
     // read instance from file
     D.read_file(path_to_instance, data_directory, instance);
     
+    // only use for instances were one tw is = [0,T] and the other one is smaller
     if (D.get_instance_mode() == 1)
         D.preprocess();
 
@@ -53,4 +54,5 @@ int main(int argc,char* argv[])
     
     return 0;
 }
+
 

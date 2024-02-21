@@ -1,6 +1,6 @@
 # Rolling-Horizon Algorithm for dynamic DARP
 
-This is the C++ implementation of the rolling-horizon algorithm for the dynamic Dial-a-Ride Problem proposed in<br>
+This is the C++ implementation of the rolling-horizon algorithm for the dynamic Dial-a-Ride Problem using Cplex. The algorithm was proposed in<br>
 
 Gaul, Klamroth, and Stiglmayr, 2021. Solving the dynamic dial-a-ride problem using a rolling-horizon event-based graph.<br> 
 21st Symposium on Algorithmic Approaches for Transportation Modelling, Optimization, and Systems (ATMOS 2021). Schloss Dagstuhl - Leibniz-Zentrum für Informatik.<br>

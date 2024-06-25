@@ -279,12 +279,6 @@ class DARPModel(Model):
                     next_node = self.next_nodes_path[k][current_node]
                 pax_km_driven += self.q[i] * self.c[(current_node, next_node)]
 
-        if (pax_km_driven != pax_km_booked):
-            raise ValueError("Passenger KM driven and booked should be equal without shortcuts.")
-        
-        if (pax_km_driven != pooling_factor):
-            raise ValueError("Pooling factor should be equal to pax km driven without shortcuts.")
-
         self.pooling_factor = pooling_factor / self.total_distance # gebuchte km / total routing costs
 
         self.avg_detour_factor = pax_km_driven / pax_km_booked

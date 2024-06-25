@@ -3,7 +3,7 @@
 This is the implementation of the Subline-Based, Location-Based, and Event-Based formulations for the static line-based Dial-a-Ride problem. We include the benchmark instances used to compare the models.
 
 ## Description
-This repository is split into three parts: the Subline- and Location-Based models, which are implemented in Python 3 with Gurobi, and the Event-Based model, which is implemented in C++ with CPLEX, and the benchmark instances.
+This repository is split into three parts: the Subline- and Location-Based models, which are implemented in Python 3 with Gurobi 10.0, and the Event-Based model, which is implemented in C++ 17 with CPLEX 22.1, and the benchmark instances.
 
 ### Location- and Subline-Based models 
 
@@ -14,18 +14,22 @@ The util.py file provides inputs and general utility functions and the requests.
 Run the models using the main.py file. Here, you can select between a debugging & productive mode as well as disabling either model.
 
 ### Event-Based model
-This repository is a fork of the [Event-Based MILP for the DARP](https://git.uni-wuppertal.de/dgaul/event-based-milp-for-darp) by Daniela Gaul. The code has been adapted for the liDARP, ensuring directionality constraints are respected.
+This repository is a fork of the [Event-Based MILP for the DARP](https://git.uni-wuppertal.de/dgaul/event-based-milp-for-darp) by Daniela Gaul. The code has been adapted for the static liDARP, ensuring directionality constraints are respected. Note that it is required to set *dynamic = false*, as the code for the Rolling Horizon has not yet been adapted to the liDARP structure. 
 
 Compile the project and run it using the darp_milp_3.cpp or darp_milp_6.cpp file, depending on the desired vehicle capacity.
 
 ## Installation
-This project was written on Windows. Make sure you have all required packages installed on your local system. For other operating systems, you may have to adjust system paths.
+This project was written on Windows. Make sure you have all required packages installed on your local system, including the required licenses for Gurobi and CPLEX. For other operating systems, you may have to adjust system paths.
 
 ## Usage
-All models are run from the command line and accept three parameters: 
+All models are run from the command line and accept three parameters: the path to the directory containing request files, an integer [1,2,3] to determine the instance mode, and an optional path to the location file (required for instance modes 2 and 3). 
+
+- Instance mode 1: consider the line with equal distances = 1. Shortcuts are possible and can be toggled separately.
+- Instance mode 2: consider the line with given (x,y) locations of bus stations. Distances are calculated using the Euclidean metric. Shortcuts are possible and can be toggled separately.
+- Instance mode 3: consider the line with a full distance matrix. Shortcuts need to be included in the file.
 
 ## Instance Format
-The models accept instance files as .txt files in one of the following formats. Example input data can be found in the "data" folder.
+The models accept instance files as .txt files in one of the following formats.
 
 **Request File**
 
@@ -71,11 +75,11 @@ If input, the distances between stations will be taken from this matrix. It need
 E-Mail kendra.reiter@uni-wuerzburg.de
 
 ## Authors and acknowledgment
-The author of the code is Kendra Reiter (kendra.reiter@uni-wuerzburg.de), partially based on code by Daniela Gaul (gaul@math.uni-wuppertal.de). The code was developed at the University of Würzburg, Germany with support from Marie Schmidt and Michael Stiglmayr.
+The author of the code is Kendra Reiter (kendra.reiter@uni-wuerzburg.de), partially based on code for the [Rolling-Horizon Event-Based Graph](https://git.uni-wuppertal.de/dgaul/rolling-horizon-algorithm-for-dynamic-darp) by Daniela Gaul (gaul@math.uni-wuppertal.de). The code was developed at the University of Würzburg, Germany with support from Marie Schmidt and Michael Stiglmayr.
 
 
 ## License
 
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />
 
-The line-based Dial-a-Ride Problem © 2024 by Kendra Reiter is licensed under [CC BY-NC-SA 4.0 ](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+This work is licensed under [CC BY-NC-SA 4.0 ](https://creativecommons.org/licenses/by-nc-sa/4.0/).

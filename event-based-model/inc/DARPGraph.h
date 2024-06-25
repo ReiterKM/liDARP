@@ -15,7 +15,8 @@ private:
     std::vector <NODE> V_in;
     std::vector <NODE> V_out;
     std::vector <NODE> V_in_new;
-    std::vector <NODE> V_out_new; 
+    std::vector <NODE> V_out_new;
+
     std::unordered_map <int,std::vector<NODE> > V_i;
     std::unordered_map <int,std::vector<NODE> > V_i_new; // new drop-off nodes corresponding to n+i
         
@@ -24,7 +25,7 @@ private:
     std::vector <ARC> A_new;
 
     // costs and travel time arcs
-    std::unordered_map <ARC,double,HashFunction<Q> > c; 
+    std::unordered_map <ARC,double,HashFunction<Q> > c; // cost == distance
     std::unordered_map <ARC,double,HashFunction<Q> > t;
 
     int num_new_arcs;

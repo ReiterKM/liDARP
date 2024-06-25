@@ -21,12 +21,12 @@ private:
     double *communicated_pickup;
 
     // map requests to variables
-    std::unordered_map <int,int> rmap;
-    std::unordered_map <NODE,uint64_t,HashFunction<S>> vmap; 
-    std::unordered_map <NODE,uint64_t,HashFunction<S>> vinmap;
-    std::unordered_map <NODE,uint64_t,HashFunction<S>> voutmap;
-    std::unordered_map <ARC,uint64_t,HashFunction<S>> amap; 
-    std::unordered_map<NODE,int,HashFunction<S>>* vec_map; 
+    std::unordered_map <int,int> rmap; // rmap[r] = idx for r in D.R (request to index)
+    std::unordered_map <NODE,uint64_t,HashFunction<S>> vmap; //vmap[v] = idx for v in G.V_in U G.V_out (vertex to index)
+    std::unordered_map <NODE,uint64_t,HashFunction<S>> vinmap; // vmap[v] = idx for v in G.V_in (pick-up vertex to index)
+    std::unordered_map <NODE,uint64_t,HashFunction<S>> voutmap; // vmap[v] = idx for v in G.V_out (drop-off vertex to index)
+    std::unordered_map <ARC,uint64_t,HashFunction<S>> amap; // amap[a] = idx for a in G.A (arc to index)
+    std::unordered_map<NODE,int,HashFunction<S>>* vec_map;  // vec_map[i][w] = idx for i in D.R for w in G.V (drop-off vertex for each request to index)
 
     // active nodes and arcs
     std::pair<NODE,double>* active_node;
@@ -55,14 +55,15 @@ public:
 
     // rolling horizon routines
     // before/ first solve
-    void first_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumArray& d_val, IloIntArray& p_val, IloIntArray& x_val, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj2, IloExpr& obj3, const std::array<double,3>& w = {1,60,0.1});
-    void query_solution(DARP& D, DARPGraph<S>& G, IloNumArray& B_val, IloIntArray& p_val, IloIntArray& x_val, const std::array<double,3>& w = {1,60,0.1});
+    void first_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumArray& d_val, IloIntArray& p_val, IloIntArray& x_val, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& 
+        , IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj2, IloExpr& obj3, IloExpr& obj4, const std::array<double,2>& w);
+    void query_solution(DARP& D, DARPGraph<S>& G, IloNumArray& B_val, IloIntArray& p_val, IloIntArray& x_val, const std::array<double,2>& w);
     void update_request_sets();
     void erase_dropped_off(bool consider_excess_ride_time, DARP& D, DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x);
     void erase_denied(bool consider_excess_ride_time, DARP& D, DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x);
     void erase_picked_up(DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& fixed_B, IloRangeArray& fixed_x);
-    void create_new_variables(bool heuristic, DARP& D, DARPGraph<S>& G, IloEnv& env, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloRangeArray& fixed_B, IloRangeArray& fixed_x, const std::array<double,3>& w = {1,60,0.1});
-    void update_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj3, const std::array<double,3>& w = {1,60,0.1});
+    void create_new_variables(bool heuristic, DARP& D, DARPGraph<S>& G, IloEnv& env, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloRangeArray& fixed_B, IloRangeArray& fixed_x, const std::array<double,2>& w);
+    void update_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<S>& G, IloEnv& env, IloModel& model, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj3, IloExpr& obj4, const std::array<double,2>& w);
     
     
     // after solve
@@ -71,10 +72,6 @@ public:
     void print_routes(DARP& D, DARPGraph<S>& G, IloNumArray& B_val, IloIntArray& x_val);
 
     // complete routine
-    std::array<double,3> solve(bool accept_all, bool consider_excess_ride_time, bool dynamic, bool heuristic, DARP& D, DARPGraph<S>& G, const std::array<double,3>& w = {1,60,0.1});
-    // objective function weights
-    // w1 = 1 weight routing costs
-    // w2 = 60 weight rejected users 
-    // w3 = 0.1 weight excess ride time 
+    std::array<double,8> solve(bool accept_all, bool consider_excess_ride_time, bool dynamic, bool heuristic, int time_limit, DARP& D, DARPGraph<S>& G, const std::array<double,2>& w);
 };
 #endif

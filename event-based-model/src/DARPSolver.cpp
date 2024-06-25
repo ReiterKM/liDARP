@@ -92,8 +92,18 @@ void DARPSolver::check_paths(DARP& D)
         {
             if (j != i)
             {
-                if (D.nodes[j].start_tw + D.nodes[j].service_time + D.tt[j][i] > D.nodes[i].end_tw || (D.nodes[i].demand + D.nodes[j].demand > D.veh_capacity))
+                if (D.nodes[j].start_tw + D.nodes[j].service_time + D.tt[j][i] > D.nodes[i].end_tw || (D.nodes[i].demand + D.nodes[j].demand > D.veh_capacity) || (D.nodes[i].direction != D.nodes[j].direction))
                 {
+                    f[i][j][0] = 0;
+                    f[i][j][1] = 0;
+                }
+                else if ((D.nodes[i].direction == 0 && D.nodes[i].bus_station < D.nodes[j].bus_station) || (D.nodes[i].direction == 1 && D.nodes[i].bus_station > D.nodes[j].bus_station)) {
+                    // infeasible due to line precedence
+                    f[i][j][0] = 0;
+                    f[i][j][1] = 0;
+                }
+                else if (D.nodes[n+j].bus_station == D.nodes[i].bus_station) {
+                    // infeasible as we require passengers to alight before the next can enter
                     f[i][j][0] = 0;
                     f[i][j][1] = 0;
                 }
@@ -108,11 +118,29 @@ void DARPSolver::check_paths(DARP& D)
                     D.next_array[n+i] = -1; // mark the end of the path
                     path.end = n+i;
 
-                    if (eight_step(D, path))
-                        f[i][j][0] = 1;
-                    else
+                    if (eight_step(D, path)) {
+                        // check line precedence
+                        if (D.nodes[j].direction == 0) {
+                            if ((D.nodes[j].bus_station <= D.nodes[i].bus_station) && (D.nodes[n + j].bus_station <= D.nodes[n + i].bus_station)) {
+                                f[i][j][0] = 1;
+                            }
+                            else {
+                                f[i][j][0] = 0;
+                            }
+                        }
+                        else {
+                            if ((D.nodes[j].bus_station >= D.nodes[i].bus_station) && (D.nodes[n + j].bus_station >= D.nodes[n + i].bus_station)) {
+                                f[i][j][0] = 1;
+                            }
+                            else {
+                                f[i][j][0] = 0;
+                            }
+                        }
+                    }
+                    else {
                         f[i][j][0] = 0;
-                    
+
+                    }
                     // test path 1
                     // j --- i --- n+i --- n+j
                     path.start = j;
@@ -122,10 +150,28 @@ void DARPSolver::check_paths(DARP& D)
                     D.next_array[n+j] = -1;
                     path.end = n+j;
 
-                    if (eight_step(D, path))
-                        f[i][j][1] = 1;
-                    else
-                        f[i][j][1] = 0;  
+                    if (eight_step(D, path)) {
+                        // check line precedence
+                        if (D.nodes[j].direction == 0) {
+                            if ((D.nodes[j].bus_station <= D.nodes[i].bus_station) && (D.nodes[n + i].bus_station <= D.nodes[n + j].bus_station)) {
+                                f[i][j][1] = 1;
+                            }
+                            else {
+                                f[i][j][1] = 0;
+                            }
+                        }
+                        else {
+                            if ((D.nodes[j].bus_station >= D.nodes[i].bus_station) && (D.nodes[n + i].bus_station >= D.nodes[n + j].bus_station)) {
+                                f[i][j][1] = 1;
+                            }
+                            else {
+                                f[i][j][1] = 0;
+                            }
+                        }
+                    }
+                    else {
+                        f[i][j][1] = 0;
+                    }
                 }
             }
         }
@@ -290,8 +336,6 @@ void DARPSolver::check_new_paths(DARP& D, double w1, double w2, double w3)
 }
 
 
-
-
 bool DARPSolver:: eight_step(DARP& D, DARPRoute& path)
 {
     ///
@@ -366,7 +410,7 @@ bool DARPSolver:: eight_step(DARP& D, DARPRoute& path)
                 {
                     // computation of ride time slack only if vertex i-n is before c in the route
                     int pred = D.pred_array[c];
-                    while (pred > 0)
+                    while (pred > 0 && pred < D.num_nodes+1)
                     {
                         if (pred == i-n)
                         {
@@ -446,7 +490,6 @@ bool DARPSolver:: eight_step(DARP& D, DARPRoute& path)
 
     return true;
 }   
-
 
 
 bool DARPSolver::update_vertices(DARP& D, DARPRoute& path)
@@ -662,7 +705,6 @@ bool DARPSolver::eight_step(DARP& D, DARPRoute& path, int j)
 
 
 
-
 void DARPSolver::find_min(double*** pointer, int i, std::vector<std::array<int,3>>& path_list) const
 {
     int min_value = DARPH_INFINITY;
@@ -861,7 +903,7 @@ bool DARPSolver::verify_routes(DARP& D, bool consider_excess_ride_time, const ch
         next_node = DARPH_ABS(D.next_array[current_node]);
     }
 
-    // noch einmal für den Knoten vor DARPH_DEPOT und DARPH_DEPOT
+    // repeat for the node ahead of DARPH_DEPOT and DARPH_DEPOT
     if(DARPH_ABS(D.pred_array[next_node]) != current_node)
     {
         fprintf(stderr,"%d->%d??\nNext: %d->%d\nPred:%d->%d",current_node,next_node,
@@ -954,11 +996,6 @@ bool DARPSolver::verify_routes(DARP& D, bool consider_excess_ride_time, const ch
             if (D.nodes[next_node].beginning_service + 0.01 < D.nodes[next_node].start_tw || D.nodes[next_node].beginning_service - 0.01 > D.nodes[next_node].end_tw)
             {
                 fprintf(stderr,"Error in time windows of node %d. Time window [%f,%f]. Beginning of service at node: %f!\n",next_node,D.nodes[next_node].start_tw,D.nodes[next_node].end_tw,D.nodes[next_node].beginning_service);
-                report_error(message,__FUNCTION__);
-            }
-            if (D.instance_mode == 2 && D.nodes[next_node].beginning_service + 0.01 < D.nodes[next_node].start_tw + notify_requests_sec/60)
-            {
-                fprintf(stderr, "WSW instance: Error in beginning of service at node %d. Service cannot start earlier than start_tw + notify_requests_sec/60.\n Beginning of service: %f\n Start_tw + notify_requests_sec/60: %f\n",next_node, D.nodes[next_node].beginning_service, D.nodes[next_node].start_tw + notify_requests_sec/60);
                 report_error(message,__FUNCTION__);
             }
 
@@ -1129,8 +1166,6 @@ bool DARPSolver::verify_routes(DARP& D, bool consider_excess_ride_time, const ch
 }
 
 
-
-
 void DARPSolver::compute_stats(DARP& D)
 {
     std::cout << "Computing stats: ...\n";
@@ -1143,7 +1178,13 @@ void DARPSolver::compute_stats(DARP& D)
     {
         if (D.routed[i])
         {
-            avg_waiting_time += D.nodes[i].beginning_service - D.nodes[i].start_tw;
+            if (D.nodes[i].request_type == 0) {
+                avg_waiting_time += D.nodes[i].beginning_service - D.nodes[i].start_tw;
+            }
+            else if (D.nodes[i].request_type == 1) {
+                avg_waiting_time += D.nodes[n+i].beginning_service - D.nodes[n+i].start_tw;
+            }
+            
             avg_ride_time += D.nodes[n+i].beginning_service - D.nodes[i].departure_time;
             avg_transportation_time += D.nodes[n+i].beginning_service - D.nodes[i].start_tw;
         }
@@ -1151,7 +1192,7 @@ void DARPSolver::compute_stats(DARP& D)
     avg_waiting_time = avg_waiting_time / answered_requests;
     avg_ride_time = avg_ride_time / answered_requests;
     avg_transportation_time = avg_transportation_time / answered_requests;
-    std::cout << "Average waiting time pick-up: " << roundf(avg_waiting_time * 100) / 100 << std::endl;
+    std::cout << "Average waiting time: " << roundf(avg_waiting_time * 100) / 100 << std::endl;
     std::cout << "Average ride time (of solution): " << roundf(avg_ride_time * 100) / 100 << std::endl; 
     std::cout << "Average transportation time: " << roundf(avg_transportation_time * 100) / 100 << std::endl;
 
@@ -1175,23 +1216,23 @@ void DARPSolver::compute_stats(DARP& D)
         } 
     }
     
-    personenkm_gefahren = 0;
-    personenkm_gebucht = 0;
+    pax_km_driven = 0;
+    pax_km_booked = 0;
     for (int i=1; i<=n; i++)
     {
         if (D.routed[i])
         {    
-            personenkm_gebucht += D.nodes[i].demand * D.d[i][n+i];
+            pax_km_booked += D.nodes[i].demand * D.d[i][n+i];
             
             current_node = i;
             next_node = D.next_array[current_node];
             while (next_node != n+i)
             {
-                personenkm_gefahren += D.nodes[i].demand * D.d[current_node][next_node];
+                pax_km_driven += D.nodes[i].demand * D.d[current_node][next_node];
                 current_node = next_node;
                 next_node = D.next_array[next_node];
             }
-            personenkm_gefahren += D.nodes[i].demand * D.d[current_node][next_node];
+            pax_km_driven += D.nodes[i].demand * D.d[current_node][next_node];
         }
     }
 
@@ -1207,10 +1248,10 @@ void DARPSolver::compute_stats(DARP& D)
     }
     pooling_factor = pooling_factor / total_routing_costs; // gebuchte km / total routing costs
 
-    avg_detour_factor = personenkm_gefahren / personenkm_gebucht;
-    mean_occupancy = personenkm_gefahren / (total_routing_costs - empty_mileage);
+    avg_detour_factor = pax_km_driven / pax_km_booked;
+    mean_occupancy = pax_km_driven / (total_routing_costs - empty_mileage);
     share_empty_mileage = empty_mileage / total_routing_costs;
-    system_efficiency = personenkm_gebucht / total_routing_costs;
+    system_efficiency = pax_km_booked / total_routing_costs;
     if (DARPH_ABS(system_efficiency - 1/avg_detour_factor * mean_occupancy * (1-share_empty_mileage)) > DARPH_EPSILON)
     {
         std::cout << "Error in system efficiency!\n";
@@ -1227,22 +1268,31 @@ void DARPSolver::compute_stats(DARP& D)
 }
 
 
-
-void DARPSolver::detailed_file(DARP& D, std::string instance) const
+void DARPSolver::detailed_file(DARP& D, std::string instance, std::array<double,8> solution) const
 {
     int current_node, next_node;
     double km_gefahren;
     std::fstream details;
-    std::string filename = instance + "_details.txt";
+    std::string filename = "output/" + instance + "_details.txt";
    
     details.open(filename, std::ios::out);
     if (!details)
     {
-        std::cerr << "Datei kann nicht geöffnet werden" << std::endl;
+        std::cerr << "File could not be opened." << std::endl;
         exit(-1);
     }
     
     details << instance << std::endl;
+
+    details << "total time & model time & status & MIP Gap" << std::endl;
+    details << solution[4] << " & " << solution[5] << " & " << solution[6] << " & " << solution[7] << std::endl;
+
+    details << "obj value & total routing costs & rejected requests & amount of vehicles & direct pax km" << std::endl;
+    details << obj_val << " & " << total_routing_costs << " & " << n - answered_requests << " & " << num_buses_required << " & " << pax_km_direct << std::endl;
+
+    details << "avg_waiting_time & avg_ride_time & avg_transportation_time & avg_detour & mean_occupancy & share_empty_mileage & efficiency & pooling_factor" << std::endl;
+    details << avg_waiting_time << " & " << avg_ride_time << " & " << avg_transportation_time << " & " << avg_detour_factor << " & " << mean_occupancy << " & " << share_empty_mileage << " & " << system_efficiency << " & " << pooling_factor << std::endl;
+
     details << " & denied & e_i & l_i & e_{n+i} & l_{n+i} & departure & arrival & regret & waiting_time & ride_time & transportation time & km_gebucht & km_gefahren & Sitze" << std::endl;
     for (int i=1; i<=n; ++i)
     {
@@ -1283,4 +1333,5 @@ void DARPSolver::detailed_file(DARP& D, std::string instance) const
         details << D.nodes[i].demand << std::endl;
     }
     details.close();
+    std::cout << "Detail file saved sucesfully." << std::endl;
 }

@@ -16,7 +16,9 @@ protected:
     const int pickup_delay_param = 5;
 
     // general evaluation
+    double obj_val;
     double total_routing_costs;
+    double num_buses_required;
     double total_excess_ride_time;
     double answered_requests;
     double avg_waiting_time;
@@ -26,8 +28,9 @@ protected:
     double avg_time_to_answer;
 
     // measuring efficiency of ridepooling systems
-    double personenkm_gebucht;
-    double personenkm_gefahren;
+    double pax_km_booked;
+    double pax_km_driven;
+    double pax_km_direct;
     double empty_mileage;
     double share_empty_mileage;
     double avg_detour_factor;
@@ -74,7 +77,7 @@ public:
     // Solution display/debugging
     bool verify_routes(DARP& D, bool consider_excess_ride_time, const char*);
     void compute_stats(DARP& D);
-    void detailed_file(DARP& D, std::string instance) const;
+    void detailed_file(DARP& D, std::string instance, std::array<double,8> solution) const;
 };
     
 #endif

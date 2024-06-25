@@ -10,9 +10,6 @@ DARPGraph<Q>::~DARPGraph() {
 
 }
 
-
-
-
 template <int Q>
 void DARPGraph<Q>::create_nodes(DARP& D, int*** f)
 {
@@ -29,12 +26,12 @@ void DARPGraph<Q>::create_nodes(DARP& D, int*** f)
         if constexpr (Q==3)
         {
             V_in.push_back({i,0,0});
-            V_out.push_back({n+i,0,0});  
+            V_out.push_back({n+i,0,0});
         }
         else
         {
             V_in.push_back({i,0,0,0,0,0});
-            V_out.push_back({n+i,0,0,0,0,0});  
+            V_out.push_back({n+i,0,0,0,0,0});
         }
         
         for (const auto& j: D.R)
@@ -50,6 +47,11 @@ void DARPGraph<Q>::create_nodes(DARP& D, int*** f)
 
                     for (const auto& k: D.R)
                     {
+                        if (i == 4 && j == 12 && k == 23) {
+                            std::cout << "in create_nodes, (4,12,23)" << std::endl;
+                            std::cout << "f[i][k][0] " << f[i][k][0] << " f[i][k][1] " << f[i][k][1] << " || " << (f[i][k][0] || f[i][k][1]) << std::endl;
+                
+                        }
                         if (k != i && k<=j-1)
                         {
                             if (f[i][k][0] || f[i][k][1])
@@ -454,9 +456,6 @@ void DARPGraph<Q>::create_new_nodes(DARP& D, int*** f, const std::vector<int> &n
 }    
 
 
-
-
-
 template <>
 void DARPGraph<3>::create_arcs(DARP& D, int*** f)
 {
@@ -532,12 +531,20 @@ void DARPGraph<3>::create_arcs(DARP& D, int*** f)
         // transit from v[0]'s pick-up location to another user's pick-up location
         if (v[2] == 0)
         {
+            bool temp_print = false;
             for (const auto& i: D.R)
             {
+                if (v[0] == 12 && v[1] == 23 && i == 4) {
+                    temp_print = true;
+                    std::cout << "in create edges" << std::endl;
+                }
                 // check if node (i,...,v[0],...) exists
                 // and if (i,...,v[1],...) exists (if v[1] == 0 too this will be feasible anyway)
                 if ((i != v[0]) && (i != v[1]) && (f[i][v[0]][0] || f[i][v[0]][1]) && (f[i][v[1]][0] || f[i][v[1]][1]))
                 {
+                    if (temp_print) {
+                        std::cout << "path is feasible" << std::endl;
+                    }
                     if (D.nodes[i].demand + D.nodes[v[0]].demand + D.nodes[v[1]].demand <= D.veh_capacity)
                     {
                         if (v[0] > v[1])
@@ -548,6 +555,14 @@ void DARPGraph<3>::create_arcs(DARP& D, int*** f)
                         A.push_back(a);
                         c[a] = D.d[v[0]][i];
                         t[a] = D.tt[v[0]][i];
+                        if (temp_print) {
+                            std::cout << "added arc " << a << std::endl;
+                        }
+                    }
+                }
+                else {
+                    if (temp_print) {
+                        std::cout << "path is not feasible" << std::endl;
                     }
                 }
             }
@@ -567,12 +582,27 @@ void DARPGraph<3>::create_arcs(DARP& D, int*** f)
                     if ((f[i][v[1]][0] || f[i][v[1]][1]) && (f[i][v[2]][0] || f[i][v[2]][1]))
                     {
                         if (D.nodes[i].demand + D.nodes[v[1]].demand + D.nodes[v[2]].demand <= D.veh_capacity)
-                        {    
+                        {
                             w = {i, v[1], v[2]};
                             a = {v,w};
                             A.push_back(a);
                             c[a] = D.d[v[0]][i];
-                            t[a] = D.tt[v[0]][i];
+
+                            // check if bus needs to turn between stations
+                            if (D.nodes[v[0]].direction != D.nodes[i].direction) {
+                                t[a] = D.turn_time + D.tt[v[0]][i];
+                            }
+                            // if both travelling forward and pick-up is at an earlier station than drop-off
+                            else if ((D.nodes[v[0]].direction == 0) && (D.nodes[i].direction == 0) && (D.nodes[v[0]].bus_station > D.nodes[i].bus_station)) {
+                                t[a] = 2* D.turn_time + D.tt[v[0]][i];
+                            }
+                            // if travelling backward and pick-up is at a later station than drop-off
+                            else if ((D.nodes[v[0]].direction == 1) && (D.nodes[i].direction == 1) && (D.nodes[v[0]].bus_station < D.nodes[i].bus_station)) {
+                                t[a] = 2 * D.turn_time + D.tt[v[0]][i];
+                            } // if no turn is required
+                            else {
+                                t[a] = D.tt[v[0]][i];
+                            }
                         }
                     }
                 } 
@@ -615,10 +645,15 @@ void DARPGraph<3>::create_arcs(DARP& D, int*** f)
         delta_out[a[0]].push_back(a);
         delta_in[a[1]].push_back(a);  
     }
+
+#if VERBOSE
+    std::cout << "Graph arcs:" << std::endl;
+    for (const auto& a : A) {
+        std::cout << a << std::endl;
+    }
+    std::cout << std::endl;
+#endif
 }
-
-
-
 
 template <>
 void DARPGraph<6>::create_arcs(DARP& D, int*** f)
@@ -801,6 +836,7 @@ void DARPGraph<6>::create_arcs(DARP& D, int*** f)
     for (const auto& v: V_out)
     {
         // transit from v[0]'s drop-off location to another user i's pick-up location
+        // this case could include a turn
         for (const auto& i: D.R)
         {
             if ((i != (v[0]-n)) && (i != v[1]) && (i != v[2]) && (i != v[3]) && (i != v[4]) && (i != v[5]))
@@ -817,7 +853,22 @@ void DARPGraph<6>::create_arcs(DARP& D, int*** f)
                             a = {v,w};
                             A.push_back(a);
                             c[a] = D.d[v[0]][i];
-                            t[a] = D.tt[v[0]][i];
+
+                            // check if bus needs to turn between stations
+                            if (D.nodes[v[0]].direction != D.nodes[i].direction) {
+                                t[a] = D.turn_time + D.tt[v[0]][i];
+                            }
+                            // if travelling forward and pick-up is at an earlier station than drop-off
+                            else if ((D.nodes[i].direction == 0) && (D.nodes[v[0]].bus_station < D.nodes[i].bus_station)) {
+                                t[a] = 2 * D.turn_time + D.tt[v[0]][i];
+                            }
+                            // if travelling backward and pick-up is at a later station than drop-off
+                            else if ((D.nodes[i].direction == 1) && (D.nodes[v[0]].bus_station > D.nodes[i].bus_station)) {
+                                t[a] = 2 * D.turn_time + D.tt[v[0]][i];
+                            } // if no turn is required
+                            else {
+                                t[a] = D.tt[v[0]][i];
+                            }
                         }
                     }
                 }
@@ -903,8 +954,6 @@ void DARPGraph<6>::create_arcs(DARP& D, int*** f)
         delta_in[a[1]].push_back(a);  
     }
 }
-
-
 
 template <>
 void DARPGraph<3>::create_new_arcs(DARP& D, int*** f, const std::vector<int>& new_requests, const std::vector<int>& all_seekers)

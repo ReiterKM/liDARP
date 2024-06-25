@@ -1,16 +1,18 @@
 #include "DARPH.h"
 
 template <int Q>
-std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_excess_ride_time, bool dynamic, bool heuristic, DARP& D, DARPGraph<Q>& G, const std::array<double,3>& w)
+std::array<double,8> RollingHorizon<Q>::solve(bool accept_all, bool consider_excess_ride_time, bool dynamic, bool heuristic, int time_limit, DARP& D, DARPGraph<Q>& G, const std::array<double,2>& w)
 {
     // We use this stringstream to create variable and constraint names
     std::stringstream name;
     
     bool solved, flag;
-    double phi; // timelimit 
+    double phi; // timelimit
     int next_r;
     double tunnr, tusnr; // time until next new requests and second next new requests
     const double notify_requests_min = double(notify_requests_sec) / 60;
+    double mip_gap;
+    int status;
     
     /// ***************Cplex API objects****************
     // Cplex model
@@ -39,9 +41,10 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
         
     // Objective function
     IloObjective obj;       
-    IloExpr obj1; // routing costs
-    IloExpr obj2; // answered requests
-    IloExpr obj3; // excess ride time
+    IloExpr total_distance; // routing costs
+    IloExpr num_pax_accepted; // pax transported
+    IloExpr num_veh; // amount of buses used
+    IloExpr pax_km; // pax distance
 
     /// ************************************************
 
@@ -150,13 +153,15 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
         const auto before = clock::now();
         
         // create MILP from Graph
-        first_milp(accept_all, consider_excess_ride_time, D, G, env, model, B_val, d_val, p_val, x_val, B, x, p, d, d_max, accept, serve_accepted, time_window_ub, time_window_lb, max_ride_time, travel_time, flow_preservation, excess_ride_time, fixed_B, fixed_x, pickup_delay, num_tours, obj, obj1, obj2, obj3, w);
+        first_milp(accept_all, consider_excess_ride_time, D, G, env, model, B_val, d_val, p_val, 
+            x_val, B, x, p, d, d_max, accept, serve_accepted, time_window_ub, time_window_lb, max_ride_time, travel_time, flow_preservation, excess_ride_time, 
+            fixed_B, fixed_x, pickup_delay, num_tours, obj, total_distance, num_pax_accepted, num_veh, pax_km, w);
         
         // Create the solver object
         cplex = IloCplex(model);
-        //name << "MILP/MILP" << "_w0=" << w[0] << "_w1=" << w[1] << "_w_2=" << w[2] << ".lp";
-        //cplex.exportModel(name.str().c_str());
-        //name.str("");
+        name << "MILP/MILP" << "_w0=" << w[0] << "_w1=" << w[1] << "_w_2=" << w[2] << "_w_3=" << w[3] << ".lp";
+        cplex.exportModel(name.str().c_str());
+        name.str("");
 
         dur_model = clock::now() - before;
 #if VERBOSE == 0
@@ -170,10 +175,12 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
             cplex.setParam(IloCplex::Param::TimeLimit, phi);
         }
         else
-            cplex.setParam(IloCplex::Param::TimeLimit, 7200);
+            cplex.setParam(IloCplex::Param::TimeLimit, time_limit);
         
         solved = cplex.solve();
         
+        std::cout << "Model status: " << cplex.getCplexStatus() << std::endl;
+        status = cplex.getCplexStatus();
 
         dur_solve = clock::now() - before;
         
@@ -181,6 +188,7 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
         {
             // If CPLEX successfully solved the model, print the results
             get_solution_values(consider_excess_ride_time, D, G, cplex, B_val, d_val, p_val, x_val, B, x, p, d);
+            mip_gap = cplex.getMIPRelativeGap();
         
             while (dynamic && solved && D.num_known_requests < n)
             {   
@@ -221,7 +229,8 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
 
                 create_new_variables(heuristic, D, G, env, B, x, p, d, fixed_B, fixed_x, w);
                 const auto after_create_new_variables = clock::now();
-                update_milp(accept_all, consider_excess_ride_time, D, G, env, model, B, x, p, d, d_max, accept, serve_accepted, time_window_ub, time_window_lb, max_ride_time, travel_time, flow_preservation, excess_ride_time, fixed_B, fixed_x, pickup_delay, num_tours, obj, obj1, obj3, w);  
+                update_milp(accept_all, consider_excess_ride_time, D, G, env, model, B, x, p, d, d_max, accept, serve_accepted, 
+                    time_window_ub, time_window_lb, max_ride_time, travel_time, flow_preservation, excess_ride_time, fixed_B, fixed_x, pickup_delay, num_tours, obj, total_distance, num_veh, pax_km, w);  
                 const auto after_update_milp = clock::now();
 
                 const sec dur_query_solution = after_query_solution - before;
@@ -439,26 +448,24 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
             }
             std::cout << std::endl;
 #endif
-            
-            total_routing_costs = cplex.getValue(obj1);
+            obj_val = cplex.getValue(obj);
+
+            total_routing_costs = cplex.getValue(total_distance);
             std::cout << "Total routing costs: " << total_routing_costs << std::endl; 
 #if VERBOSE
             std::cout << "Average routing costs: " << roundf(total_routing_costs / (n - all_denied.size()) * 100) / 100 << std::endl; 
 #endif
+            num_buses_required = cplex.getValue(num_veh);
+            std::cout << "Number required vehicles: " << num_buses_required << std::endl;
+#if VERBOSE
+            std::cout << "Number free vehicles: " << D.num_vehicles - num_buses_required << std::endl;
+#endif
             
+            pax_km_direct = cplex.getValue(pax_km);
+            std::cout << "Total passenger routing km saved: " << pax_km_direct << std::endl;
             
             if (consider_excess_ride_time)
             {
-                if (w[2] > DARPH_EPSILON)
-                {
-                    total_excess_ride_time = cplex.getValue(obj3);
-                    std::cout << "Total excess ride time: " << total_excess_ride_time << std::endl; 
-#if VERBOSE
-                    std::cout << "Average excess ride time: " << roundf(total_excess_ride_time / (n - all_denied.size()) * 100) / 100 << std::endl; 
-#endif
-                }
-                else
-                {
                     total_excess_ride_time = 0;
                     for (const auto& i: D.R)
                     {
@@ -471,14 +478,13 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
 #if VERBOSE
                     std::cout << "Average excess ride time: " << roundf(total_excess_ride_time / (n - all_denied.size()) * 100) / 100 << std::endl; 
 #endif
-                }
             }
 
             if (dynamic)
                 answered_requests = n - all_denied.size();
             else
             {
-                answered_requests = n - cplex.getValue(obj2);
+                answered_requests = cplex.getValue(num_pax_accepted);
             }
 
             std::cout << "Number denied requests: " << n - answered_requests << std::endl;
@@ -504,6 +510,12 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
 #endif
                      
         }
+        else if (cplex.getCplexStatus() == IloCplex::Infeasible) {
+            std::cout << "Please check MILP file." << std::endl;
+            mip_gap = 0;
+
+            //cplex.getIIS();
+        }
         else
         {
             std::cerr << "\n\nCplex error!\n";
@@ -512,9 +524,9 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
         }
 
         // free memory of Cplex objects created in first_milp()
-        obj1.end();
-        obj2.end();
-        obj3.end();
+        total_distance.end();
+        num_pax_accepted.end();
+        num_veh.end();
         env.end(); 
     }
     catch (IloException& ex) {
@@ -534,13 +546,13 @@ std::array<double,3> RollingHorizon<Q>::solve(bool accept_all, bool consider_exc
     }
 #endif        
 
-    std::array<double,3> obj_value = {total_routing_costs, n - answered_requests, total_excess_ride_time};
+    std::array<double,8> obj_value = {total_routing_costs, n - answered_requests, num_buses_required, pax_km_direct, dur_solve.count(), dur_model.count(), status, mip_gap};
     return obj_value;
 }
 
 
 template<int Q>
-void RollingHorizon<Q>::query_solution(DARP& D, DARPGraph<Q>& G, IloNumArray& B_val, IloIntArray& p_val, IloIntArray& x_val, const std::array<double,3>& w)
+void RollingHorizon<Q>::query_solution(DARP& D, DARPGraph<Q>& G, IloNumArray& B_val, IloIntArray& p_val, IloIntArray& x_val, const std::array<double,2>& w)
 {      
     bool flag;
 
@@ -1864,7 +1876,7 @@ void RollingHorizon<Q>::erase_picked_up(DARPGraph<Q>& G, IloEnv& env, IloModel& 
 
 
 template<int Q>
-void RollingHorizon<Q>::create_new_variables(bool heuristic, DARP& D, DARPGraph<Q>& G, IloEnv& env, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloRangeArray& fixed_B, IloRangeArray& fixed_x, const std::array<double,3>& w)
+void RollingHorizon<Q>::create_new_variables(bool heuristic, DARP& D, DARPGraph<Q>& G, IloEnv& env, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloRangeArray& fixed_B, IloRangeArray& fixed_x, const std::array<double,2>& w)
 {
     // We use this stringstream to create variable and constraint names
     std::stringstream name;
@@ -1936,7 +1948,10 @@ void RollingHorizon<Q>::create_new_variables(bool heuristic, DARP& D, DARPGraph<
 
 
 template<int Q>
-void RollingHorizon<Q>::update_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<Q>& G, IloEnv& env, IloModel& model, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj3, const std::array<double,3>& w)
+void RollingHorizon<Q>::update_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<Q>& G, IloEnv& env, IloModel& model, IloNumVarArray& B, IloNumVarArray& x, 
+    IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, 
+    IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, 
+    IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj3, IloExpr& obj4, const std::array<double,2>& w)
 {
     // We use this stringstream to create variable and constraint names
     std::stringstream name;   
@@ -2038,7 +2053,6 @@ void RollingHorizon<Q>::update_milp(bool accept_all, bool consider_excess_ride_t
         }   
     }
     
-    std::cout << "modify obj " << modify_obj << std::endl;
     // update objective function
     expr = obj.getExpr();
     for (const auto& a: G.A_new)
@@ -2500,10 +2514,17 @@ void RollingHorizon<Q>::update_milp(bool accept_all, bool consider_excess_ride_t
 
 
 template<int Q>
-void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<Q>& G, IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumArray& d_val, IloIntArray& p_val, IloIntArray& x_val, IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& obj1, IloExpr& obj2, IloExpr& obj3, const std::array<double,3>& w)
+void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_time, DARP& D, DARPGraph<Q>& G, 
+    IloEnv& env, IloModel& model, IloNumArray& B_val, IloNumArray& d_val, IloIntArray& p_val, IloIntArray& x_val, 
+    IloNumVarArray& B, IloNumVarArray& x, IloNumVarArray& p, IloNumVarArray& d, IloNumVar& d_max, IloRangeArray& accept, 
+    IloRangeArray& serve_accepted, IloRangeArray& time_window_ub, IloRangeArray& time_window_lb, IloArray<IloRangeArray>& max_ride_time, 
+    IloRangeArray& travel_time, IloRangeArray& flow_preservation, IloRangeArray& excess_ride_time, IloRangeArray& fixed_B, IloRangeArray& fixed_x, 
+    IloRangeArray& pickup_delay, IloRange& num_tours, IloObjective& obj, IloExpr& total_distance, IloExpr& num_pax_accepted, IloExpr& num_veh, IloExpr& pax_km, const std::array<double,2>& w)
 {
     // We use this stringstream to create variable and constraint names
     std::stringstream name;
+
+    IloRange fixed_input;
 
     model = IloModel(env);
 
@@ -2582,8 +2603,7 @@ void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_ti
     fixed_B = IloRangeArray(env, G.vcardinality);
     fixed_x = IloRangeArray(env, G.acardinality);
     excess_ride_time = IloRangeArray(env, G.voutcardinality);
-    pickup_delay = IloRangeArray(env, G.vincardinality);
-    
+    pickup_delay = IloRangeArray(env, G.vincardinality);    
     
     
     if (accept_all)
@@ -2597,47 +2617,54 @@ void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_ti
         model.add(accept);
     }
         
-    obj1 = IloExpr(env); // routing costs
-    obj2 = IloExpr(env); // answered requests
-    obj3 = IloExpr(env); // excess ride time
+    total_distance = IloExpr(env); // routing costs
+    num_pax_accepted = IloExpr(env); // answered requests
+    num_veh = IloExpr(env); // amount of buses used // OLD: excess ride time
+    pax_km = IloExpr(env); // direct pax km
     
     
     IloExpr expr(env);
-
     // Create objective function
-    obj1 += 0;
-    for (const auto& a: G.A)
-    {   
-        obj1 += G.c[a] * x[amap[a]]; 
+
+    // routing costs
+    total_distance += 0;
+    for (const auto& a : G.A)
+    {
+        total_distance += G.c[a] * x[amap[a]];
     }
     
-    obj2 += 0;
+    // rejected requests
+    num_pax_accepted += 0;
     if (!accept_all)
     {
-        obj2 += D.rcardinality; 
         for (const auto& i : D.R)
         {
-            obj2 -= p[rmap[i]]; 
+            num_pax_accepted += p[rmap[i]];
         }
     }
     
-    obj3 += 0;
-    if (consider_excess_ride_time)
+    // pax km
+    pax_km += 0;
+    for (const auto& i : D.R)
     {
-        for (const auto& i: D.R)
-        {
-            obj3 += d[rmap[i]];
-        }
+        pax_km += D.nodes[i].demand * D.d_direct[i] * p[rmap[i]];
     }
     
-    expr = w[0] * obj1 + w[1] * obj2 + w[2] * obj3; 
-    obj = IloObjective(env, expr, IloObjective::Minimize);
+    expr = w[0] * num_pax_accepted + w[1] * (pax_km - total_distance);
+
+    obj = IloObjective(env, expr, IloObjective::Maximize);
     model.add(obj);
     expr.clear();
 
-   
-              
-    // Constraints
+    // number of vehicles
+    num_veh += 0;
+    for (const auto& a : G.delta_out[G.depot])
+    {
+        num_veh += x[amap[a]];
+    }
+    num_tours = IloRange(env, num_veh, D.num_vehicles, "number_tours");
+    model.add(num_tours);
+
     // 'flow preservation' constraints
     // depot
     for (const auto& a: G.delta_in[G.depot])
@@ -2713,16 +2740,6 @@ void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_ti
     }
     model.add(serve_accepted);
     
-
-    // number of vehicles
-    for (const auto& a: G.delta_out[G.depot])
-    {
-        expr += x[amap[a]];
-    }
-    num_tours = IloRange(env, expr, D.num_vehicles, "number_tours");
-    model.add(num_tours);
-    expr.clear();
-    
     // travel time arc a 
     for (const auto& a: G.A)
     {   
@@ -2734,6 +2751,11 @@ void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_ti
         {
             expr = -B[vmap[a[1]]] + B[vmap[a[0]]] + D.nodes[a[0][0]].service_time + G.t[a] - (D.nodes[a[0][0]].end_tw - D.nodes[a[1][0]].start_tw + G.t[a] + D.nodes[a[0][0]].service_time) * (1 - x[amap[a]]);
             travel_time[amap[a]] = IloRange(env,expr,0,name.str().c_str());
+            if ((a[0][0] == 45) && (a[1][0] == 18)) {
+                std::cout << "travel time arc constr" << std::endl;
+                std::cout << "D.nodes[a[0][0]].service_time: " << D.nodes[a[0][0]].service_time << ", G.t[a]: " << G.t[a] << ", (D.nodes[a[0][0]].end_tw: " << D.nodes[a[0][0]].end_tw << ", D.nodes[a[1][0]].start_tw: " << D.nodes[a[1][0]].start_tw << ", G.t[a]: " << G.t[a] << ", D.nodes[a[0][0]].service_time: " << D.nodes[a[0][0]].service_time << std::endl;
+                std::cout << "(D.nodes[a[0][0]].end_tw - D.nodes[a[1][0]].start_tw + G.t[a] + D.nodes[a[0][0]].service_time): " << (D.nodes[a[0][0]].end_tw - D.nodes[a[1][0]].start_tw + G.t[a] + D.nodes[a[0][0]].service_time) << std::endl;
+            }
         }
         else
         {
@@ -2788,7 +2810,7 @@ void RollingHorizon<Q>::first_milp(bool accept_all, bool consider_excess_ride_ti
                 name << "time_window_ub_(" << v[0] << "," << v[1] << "," << v[2] << ")";
             else
                 name << "time_window_ub_(" << v[0] << "," << v[1] << "," << v[2] << "," << v[3] << "," << v[4] << "," << v[5] << ")";
-            time_window_ub[vmap[v]] = IloRange(env, 0, -B[vmap[v]] + D.nodes[i].max_ride_time + D.nodes[i].start_tw + D.nodes[i].service_time + D.nodes[i].tw_length * expr, IloInfinity, name.str().c_str());
+            time_window_ub[vmap[v]] = IloRange(env, 0, -B[vmap[v]] + D.nodes[i].max_ride_time + D.nodes[i].start_tw + D.nodes[i].service_time + D.nodes[i+n].tw_length * expr, IloInfinity, name.str().c_str());
             expr.clear();
             name.str("");
 
@@ -2856,6 +2878,8 @@ void RollingHorizon<Q>::print_routes(DARP& D, DARPGraph<Q>& G, IloNumArray& B_va
     std::vector<ARC> cycle_arcs;
     std::vector<ARC> cycle;
     ARC b = {};
+
+    std::vector<double> ride_time;
     
     for (const auto& a: G.A)
     {
@@ -2938,11 +2962,13 @@ void RollingHorizon<Q>::print_routes(DARP& D, DARPGraph<Q>& G, IloNumArray& B_va
                 D.next_array[current] = DARPH_DEPOT;
 
                 std::cout << std::endl;
-                std::cout << std::left << setw(STRINGWIDTH) << setfill(' ') << time_passed;
+                std::cout << std::left << setw(STRINGWIDTH) << setfill(' ') << "Time:";
                 for (const auto& a: cycle)
                 {
-                    std::cout << std::left << setw(STRINGWIDTH) << setfill(' ') << "Time:";
+                    std::cout << std::left << setw(STRINGWIDTH) << setfill(' ') << "   ";
                     std::cout << std::left << setw(STRINGWIDTH) << setfill(' ') << B_val[vmap[a[0]]];
+                    //std::cout << std::endl;
+                    //std::cout << a << " " << a[0] << " " << a[0][0] << std::endl;
                     D.nodes[a[0][0]].beginning_service = B_val[vmap[a[0]]];
                 }
                 std::cout << std::endl;
@@ -3080,13 +3106,29 @@ void RollingHorizon<Q>::get_solution_values(bool consider_excess_ride_time, DARP
     }
     else
     {
+        n = D.num_requests;
         for (const auto& i: D.R)
         {
             if (p_val[rmap[i]] > 0.9)
             {
                 communicated_pickup[i-1] = D.nodes[i].beginning_service;
 #if VERBOSE
-                std::cout << "communicated pick-up request " << i << ": " << communicated_pickup[i-1] << std::endl;
+                std::cout << "Request " << i << std::endl;
+                std::cout << "  Communicated pick-up at: " << communicated_pickup[i-1] << std::endl;
+
+                // note to self: if dynamic, you can use the attributes of DARPNode, as these are updated continuously. Since these are not (yet) available in the static case, we have to calculate them here.
+                std::cout << "  Max ride time: " << D.nodes[i].max_ride_time << std::endl;
+                std::cout << "  True ride time: " << D.nodes[i+n].beginning_service - (D.nodes[i].beginning_service + D.nodes[i].service_time) << std::endl;
+
+                if (D.nodes[i].request_type == 0) {
+                    std::cout << "  Wait time: " << D.nodes[i].beginning_service - D.nodes[i].start_tw << std::endl;
+                }
+                else if (D.nodes[i].request_type == 1) {
+                    std::cout << "  Wait time: " << D.nodes[i+n].end_tw -  D.nodes[n+i].beginning_service << std::endl;
+                }
+                else {
+                    std::cout << "  Wait time: None." << std::endl;
+                }                
 #endif
             }
                 

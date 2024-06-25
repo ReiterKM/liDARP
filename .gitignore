@@ -1,0 +1,5 @@
+*.lp
+*.ilp
+*.pyc
+*.vscode
+code/__pycache__

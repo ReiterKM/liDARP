@@ -15,6 +15,7 @@ private:
     double alpha; // service promise alpha
     double beta; // service promise beta
     int veh_capacity;
+    double turn_time{3}; // time to turn around
     double **d; // The distance matrix d, which denotes distance between passengers
     double **tt; // The travel times matrix tt 
     std::vector<double> d_direct;
@@ -41,9 +42,7 @@ private:
     int num_backward_requests{ 0 };
     
     
-public:
-    double turn_time; // time to turn around
-    
+public:    
     DARP(int); // constructor for an n-node problem
     ~DARP(); 
     // copy/ move constructor and assignment/ move operator not defined, not needed in this project so far (not more than one instance created)
